@@ -1,56 +1,70 @@
-import { createContext, useContext, useState, ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState } from 'react'
+import api from '../api/client'
 
-type AuthContextType = {
-  user: any
-  login: (email: string, password: string) => Promise<void>
-  register: (email: string, password: string, username?: string) => Promise<void>
+type User = any
+type AuthCtx = {
+  user: User | null
+  loading: boolean
+  login: (phone: string, password: string) => Promise<any>
+  register: (data: any) => Promise<any>
   logout: () => void
 }
 
-const AuthContext = createContext<AuthContextType | null>(null)
+const Ctx = createContext<AuthCtx>({} as any)
+export const useAuth = () => useContext(Ctx)
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<any>(() => {
+export function AuthProvider({children}:{children:any}){
+  const [user,setUser]=useState<User|null>(null)
+  const [loading,setLoading]=useState(true)
+
+  useEffect(()=>{
+    const token = localStorage.getItem('access')
+    if(!token){ setLoading(false); return }
+    api.get('/auth/me/').then(r=>setUser(r.data)).catch(()=>{}).finally(()=>setLoading(false))
+  },[])
+
+  async function login(phone:string,password:string){
+    const clean = phone.trim()
     try {
-      const saved = localStorage.getItem('user')
-      return saved ? JSON.parse(saved) : null
+      const r = await api.post('/auth/login/', {email: clean, password})
+      localStorage.setItem('access', r.data.access)
+      localStorage.setItem('refresh', r.data.refresh)
+      try { const me = await api.get('/auth/me/'); setUser(me.data); return me.data } catch { return r.data }
     } catch {
-      return null
+      try {
+        const r = await api.post('/auth/login/', {username: clean, password})
+        localStorage.setItem('access', r.data.access)
+        localStorage.setItem('refresh', r.data.refresh)
+        try { const me = await api.get('/auth/me/'); setUser(me.data); return me.data } catch { return r.data }
+      } catch {
+        throw new Error('login_failed')
+      }
     }
-  })
-
-  async function login(email: string, password: string) {
-    // TODO: o'z API'ingizga almashtiring
-    // const res = await api.post('/auth/login', { email, password })
-    // const u = res.data.user
-    const u = { email }
-    setUser(u)
-    localStorage.setItem('user', JSON.stringify(u))
   }
 
-  async function register(email: string, password: string, username?: string) {
-    // TODO: o'z API'ingizga almashtiring
-    // const res = await api.post('/auth/register', { email, password, username })
-    // const u = res.data.user
-    const u = { email, username }
-    setUser(u)
-    localStorage.setItem('user', JSON.stringify(u))
+  async function register(data:any){
+    const phone = data.phone || ''
+    const payload: any = {
+      username: phone || data.first_name || 'user',
+      first_name: data.first_name || '',
+      last_name: data.last_name || '',
+      password: data.password,
+      phone: phone,
+    }
+    const r = await api.post('/auth/register/', payload)
+    try {
+      await login(phone, data.password)
+    } catch (e) {
+    }
+    return r.data
   }
 
-  function logout() {
+  function logout(){
+    localStorage.removeItem('access')
+    localStorage.removeItem('refresh')
     setUser(null)
-    localStorage.removeItem('user')
+    window.location.href = '/'
   }
 
-  return (
-    <AuthContext.Provider value={{ user, login, register, logout }}>
-      {children}
-    </AuthContext.Provider>
-  )
-}
-
-export function useAuth() {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
+  return <Ctx.Provider value={{user,loading,login,register,logout}}>{children}</Ctx.Provider>
 }

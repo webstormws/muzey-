@@ -25,7 +25,7 @@ api.interceptors.response.use(r=>r, async err => {
     }
     localStorage.removeItem('access')
     localStorage.removeItem('refresh')
-    window.location.href = '/login'
+    // Don't redirect to login, allow guest usage
   }
   return Promise.reject(err)
 })
